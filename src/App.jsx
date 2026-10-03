@@ -15,9 +15,14 @@ import Contact from './pages/Contact';
 import ProtectedRoute from './components/ProtectedRoute';
 
 // Lazy-loaded: these pull in firebase/auth + firebase/firestore, which guests
-// browsing the public site never need to download.
+// just browsing the public site never need to download.
 const AdminLogin = lazy(() => import('./pages/Admin/Login'));
 const AdminDashboard = lazy(() => import('./pages/Admin/Dashboard'));
+const Login = lazy(() => import('./pages/Login'));
+const Signup = lazy(() => import('./pages/Signup'));
+const Account = lazy(() => import('./pages/Account'));
+
+const Loading = () => <div className="px-5 py-28 text-center text-ink-light">Loading…</div>;
 
 export default function App() {
   return (
@@ -35,21 +40,26 @@ export default function App() {
           <Route path="/gallery" element={<Gallery />} />
           <Route path="/book" element={<BookNow />} />
           <Route path="/contact" element={<Contact />} />
+
+          {/* Registered guest account */}
+          <Route path="/login" element={<Suspense fallback={<Loading />}><Login /></Suspense>} />
+          <Route path="/signup" element={<Suspense fallback={<Loading />}><Signup /></Suspense>} />
           <Route
-            path="/admin/login"
+            path="/account"
             element={
-              <Suspense fallback={<div className="px-5 py-28 text-center text-ink-light">Loading…</div>}>
-                <AdminLogin />
-              </Suspense>
+              <ProtectedRoute>
+                <Suspense fallback={<Loading />}><Account /></Suspense>
+              </ProtectedRoute>
             }
           />
+
+          {/* Admin -- requires the real admin claim, not just any signed-in account */}
+          <Route path="/admin/login" element={<Suspense fallback={<Loading />}><AdminLogin /></Suspense>} />
           <Route
             path="/admin"
             element={
-              <ProtectedRoute>
-                <Suspense fallback={<div className="px-5 py-28 text-center text-ink-light">Loading…</div>}>
-                  <AdminDashboard />
-                </Suspense>
+              <ProtectedRoute adminOnly>
+                <Suspense fallback={<Loading />}><AdminDashboard /></Suspense>
               </ProtectedRoute>
             }
           />

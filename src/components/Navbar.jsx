@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, User } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const links = [
   { to: '/', key: 'home' },
@@ -17,7 +18,11 @@ const links = [
 
 export default function Navbar() {
   const { t, i18n } = useTranslation();
+  const { user, isAdmin } = useAuth();
   const [open, setOpen] = useState(false);
+  // Admins have their own dashboard link elsewhere -- this is for registered guests only.
+  const accountLink = user && !isAdmin ? '/account' : '/login';
+  const accountLabel = user && !isAdmin ? (i18n.language === 'en' ? 'My Bookings' : 'मेरो बुकिङ') : (i18n.language === 'en' ? 'Sign In' : 'साइन इन');
 
   const toggleLang = () => i18n.changeLanguage(i18n.language === 'en' ? 'ne' : 'en');
 
@@ -43,6 +48,12 @@ export default function Navbar() {
         </nav>
 
         <div className="flex items-center gap-3">
+          <Link
+            to={accountLink}
+            className="hidden sm:flex items-center gap-1.5 text-sm font-medium text-ink/80 hover:text-pine transition-colors"
+          >
+            <User size={16} /> {accountLabel}
+          </Link>
           <button
             onClick={toggleLang}
             className="hidden sm:block text-sm font-medium px-3 py-1.5 rounded-full border border-ink/20 hover:border-pine hover:text-pine transition-colors"
@@ -68,6 +79,9 @@ export default function Navbar() {
               {t(`nav.${l.key}`)}
             </NavLink>
           ))}
+          <Link to={accountLink} onClick={() => setOpen(false)} className="text-ink/80 py-1">
+            {accountLabel}
+          </Link>
           <button onClick={toggleLang} className="text-left text-sm py-1 text-pine font-medium">
             {i18n.language === 'en' ? 'नेपालीमा हेर्नुहोस्' : 'View in English'}
           </button>

@@ -1,0 +1,36 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      // Only the owner's Firebase Auth account can read/write directly.
+      // (Guest-facing writes go through Cloud Functions instead, not direct client writes.)
+      return request.auth != null;
+    }
+
+    // rooms: publicly readable, writable only by an authenticated admin
+    match /rooms/{roomId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // bookings: no direct client writes at all (creation happens only via the
+    // createBooking Cloud Function, using the Admin SDK, which bypasses these rules).
+    // Only the admin can read or update bookings directly.
+    match /bookings/{bookingId} {
+      allow read: if isAdmin();
+      allow update: if isAdmin();
+      allow create: if false;
+      allow delete: if false;
+    }
+
+    // inquiries: same pattern -- created only via the submitInquiry Cloud Function.
+    match /inquiries/{inquiryId} {
+      allow read: if isAdmin();
+      allow update: if isAdmin();
+      allow create: if false;
+      allow delete: if false;
+    }
+  }
+}
