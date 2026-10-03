@@ -1,5 +1,7 @@
-import { initializeApp, getApps } from 'firebase/app';
-import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
+import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
+import { getFunctions, type Functions } from 'firebase/functions';
+import { getAuth, type Auth } from 'firebase/auth';
+import { getFirestore, type Firestore } from 'firebase/firestore';
 
 // Fill these in from your Firebase project settings (Project settings > General > Your apps),
 // or set them as VITE_FIREBASE_* environment variables in a .env file (see .env.example).
@@ -14,19 +16,28 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-export function isFirebaseConfigured() {
+export function isFirebaseConfigured(): boolean {
   return Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
 }
 
-let app = null;
-let functionsInstance = null;
+let app: FirebaseApp | null = null;
+let functionsInstance: Functions | null = null;
+let authInstance: Auth | null = null;
+let dbInstance: Firestore | null = null;
 
 if (isFirebaseConfigured() && getApps().length === 0) {
   app = initializeApp(firebaseConfig);
   functionsInstance = getFunctions(app);
+  authInstance = getAuth(app);
+  dbInstance = getFirestore(app);
 
   // Uncomment while developing against the local Firebase emulator suite:
   // connectFunctionsEmulator(functionsInstance, 'localhost', 5001);
 }
 
-export { app, functionsInstance as functions };
+export {
+  app,
+  functionsInstance as functions,
+  authInstance as auth,
+  dbInstance as db,
+};
