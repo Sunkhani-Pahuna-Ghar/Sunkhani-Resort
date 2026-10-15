@@ -19,10 +19,7 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "seed:all": "ts-node src/database/seeder/seed.all.ts",
-    "seed:user": "ts-node src/database/seeder/seed.command.ts",
-    "seed:guides": "ts-node src/database/seeder/seed.guides.ts",
-    "seed:sessions": "ts-node src/database/seeder/seed.sessions.ts"
+    "seed:user": "ts-node src/database/seeder/seed.command.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1035.0",

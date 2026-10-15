@@ -7,11 +7,13 @@ import { User, UserSchema } from "./entity/user.entity";
 import { AuthController } from "./controllers/auth.controller";
 import { AuthService } from "./service/auth.service";
 import { JwtStrategy } from "./guards/jwt-strategy.guard";
+import { MailModule } from "../mail/mail.module";
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
     PassportModule,
+    MailModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
