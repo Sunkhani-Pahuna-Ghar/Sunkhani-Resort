@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { Document } from "mongoose";
 import { Status } from "../enum/user.enum";
+import { Role } from "../enum/role.enum";
 
 export type UserDocument = User & Document;
 
@@ -24,14 +25,16 @@ export class User {
   @Prop({ type: String, enum: Status, default: Status.ACTIVE })
   status!: Status;
 
-  @Prop({ type: String, default: null })
-  tempPassword!: string | null;
+  // Only ever set by the server (make-admin script). Never read from a request body.
+  @Prop({ type: String, enum: Role, default: Role.GUEST })
+  role!: Role;
 
-  @Prop({ type: Boolean, default: false })
-  isTempPassword!: boolean;
+  // SHA-256 of the emailed reset token. The token itself is never stored.
+  @Prop({ type: String, default: null })
+  passwordResetTokenHash!: string | null;
 
   @Prop({ type: Date, default: null })
-  tempPasswordExpiresAt!: Date | null;
+  passwordResetExpiresAt!: Date | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

@@ -27,24 +27,29 @@ export class MailService {
   async send(to: string, subject: string, text: string): Promise<void> {
     if (!this.transporter) {
       const isProd = process.env.NODE_ENV === "production";
+      // In production never write email bodies (they can hold reset links) to the logs.
       this.logger.log(
-        isProd ? `(email not sent) to=${to} subject=${subject}` : `(email not sent) to=${to} subject=${subject}\n${text}`,
+        isProd
+          ? `(email not sent) to=${to} subject=${subject}`
+          : `(email not sent) to=${to} subject=${subject}\n${text}`,
       );
       return;
     }
     await this.transporter.sendMail({
-      from: this.config.get<string>("MAIL_FROM") || this.config.get<string>("SMTP_USER"),
+      from:
+        this.config.get<string>("MAIL_FROM") ||
+        this.config.get<string>("SMTP_USER"),
       to,
       subject,
       text,
     });
   }
 
-  async sendPasswordResetEmail(to: string, tempPassword: string, expiresAt: Date): Promise<void> {
+  async sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
     await this.send(
       to,
-      "Your temporary password",
-      `Your temporary password is: ${tempPassword}\nIt expires at ${expiresAt.toISOString()}.`,
+      "Reset your Sunkhani Pahuna Ghar password",
+      `Use this link to choose a new password. It works for 1 hour:\n\n${resetUrl}\n\nIf you did not ask for this, you can ignore this email. Your password has not changed.`,
     );
   }
 }

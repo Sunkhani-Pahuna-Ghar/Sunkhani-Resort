@@ -6,6 +6,14 @@ import { Model } from "mongoose";
 import { User, UserDocument } from "../entity/user.entity";
 import { Status } from "../enum/user.enum";
 
+function requireJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error("JWT_SECRET is not set. Add it to your .env file.");
+  }
+  return secret;
+}
+
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
@@ -29,15 +37,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException("User not found or inactive");
     }
 
+    // The role is read from the database on every request (never from the token),
+    // so removing someone's admin role takes effect immediately.
     return {
       userId: user.id,
       email: user.email,
+      role: user.role,
     };
   }
-}
-
-function requireJwtSecret(): string {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) throw new Error("JWT_SECRET is not set. Add it to your .env file.");
-  return secret;
 }

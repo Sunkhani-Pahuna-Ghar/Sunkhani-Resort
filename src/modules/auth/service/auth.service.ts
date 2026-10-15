@@ -1,10 +1,12 @@
 import {
   Injectable,
+  Logger,
   UnauthorizedException,
   ConflictException,
   BadRequestException,
   NotFoundException,
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
@@ -14,24 +16,34 @@ import { User, UserDocument } from "../entity/user.entity";
 import { CreateUserDto } from "../dto/create-user.dto";
 import { LoginDto } from "../dto/login.dto";
 import { Status } from "../enum/user.enum";
-import { VerifyTempPasswordDto } from "../dto/verify-temp-pswd.dto";
-import { ResetPasswordDto } from "../dto/reset-pswd.dto";
+import { Role } from "../enum/role.enum";
+import { ForgotPasswordDto } from "../dto/forgot-password.dto";
+import { ResetPasswordDto } from "../dto/reset-password.dto";
 import { UpdateProfileDto } from "../dto/update-profile.dto";
 import { ChangePasswordDto } from "../dto/change-password.dto";
 import { MailService } from "../../mail/mail.service";
 
+// Compared against when the email is unknown, so "no such user" and
+// "wrong password" take about the same time to answer.
+const DUMMY_HASH = bcrypt.hashSync("not-a-real-password", 10);
+
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+function sha256(value: string): string {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @InjectModel(User.name)
     private userModel: Model<UserDocument>,
     private jwtService: JwtService,
     private mailService: MailService,
+    private config: ConfigService,
   ) {}
-
-  private generateTempPassword(): string {
-    return crypto.randomBytes(4).toString("hex");
-  }
 
   private normalizeEmail(email: string): string {
     return email.trim().toLowerCase();
@@ -46,6 +58,7 @@ export class AuthService {
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
+        role: user.role,
       },
     };
   }
@@ -63,11 +76,19 @@ export class AuthService {
       password: await bcrypt.hash(createUserDto.password, 10),
       firstName: createUserDto.firstName?.trim() || null,
       lastName: createUserDto.lastName?.trim() || null,
-      isTempPassword: false,
+      phoneNumber: createUserDto.phoneNumber?.trim() || null,
       status: Status.ACTIVE,
+      role: Role.GUEST, // always a guest; admins are made with the make-admin script
     });
 
-    await user.save();
+    try {
+      await user.save();
+    } catch (err: any) {
+      if (err?.code === 11000) {
+        throw new ConflictException("Email already registered");
+      }
+      throw err;
+    }
 
     return this.issueToken(user);
   }
@@ -78,123 +99,76 @@ export class AuthService {
       status: Status.ACTIVE,
     });
 
-    if (!user) {
-      throw new UnauthorizedException("Invalid credentials");
-    }
-
-    const isPasswordValid = await bcrypt.compare(
+    const passwordOk = await bcrypt.compare(
       loginDto.password,
-      user.password,
+      user ? user.password : DUMMY_HASH,
     );
 
-    if (!isPasswordValid) {
+    if (!user || !passwordOk) {
       throw new UnauthorizedException("Invalid credentials");
-    }
-
-    if (user.isTempPassword) {
-      if (
-        user.tempPasswordExpiresAt &&
-        new Date() > user.tempPasswordExpiresAt
-      ) {
-        throw new UnauthorizedException(
-          "Temporary password has expired. Please request a new one.",
-        );
-      }
-
-      return {
-        requirePasswordChange: true,
-        message: "Please change your temporary password",
-        email: user.email,
-      };
     }
 
     return this.issueToken(user);
   }
 
-  async verifyTempPasswordAndSetNew(verifyDto: VerifyTempPasswordDto) {
+  /**
+   * Always answers the same way whether or not the email has an account, and never
+   * changes the password. The password only changes when the emailed link is used.
+   */
+  async forgotPassword(dto: ForgotPasswordDto) {
+    const generic = {
+      message: "If that email has an account, a reset link has been sent.",
+    };
+
     const user = await this.userModel.findOne({
-      email: verifyDto.email,
+      email: this.normalizeEmail(dto.email),
+      status: Status.ACTIVE,
+    });
+    if (!user) return generic;
+
+    const token = crypto.randomBytes(32).toString("hex"); // 64 hex chars
+    user.passwordResetTokenHash = sha256(token);
+    user.passwordResetExpiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS);
+    await user.save();
+
+    const baseUrl = (
+      this.config.get<string>("FRONTEND_URL") || "http://localhost:5173"
+    ).replace(/\/+$/, "");
+    const resetUrl = `${baseUrl}/reset-password?token=${token}`;
+
+    try {
+      await this.mailService.sendPasswordResetEmail(user.email, resetUrl);
+    } catch (err) {
+      // Do not reveal mail problems to the caller.
+      this.logger.error(`Could not send reset email: ${String(err)}`);
+    }
+
+    return generic;
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    const user = await this.userModel.findOne({
+      passwordResetTokenHash: sha256(dto.token),
+      passwordResetExpiresAt: { $gt: new Date() },
       status: Status.ACTIVE,
     });
 
     if (!user) {
-      throw new UnauthorizedException("Invalid credentials");
+      throw new BadRequestException("This reset link is invalid or has expired");
     }
 
-    if (!user.isTempPassword) {
-      throw new BadRequestException("User does not have a temporary password");
-    }
-
-    if (user.tempPasswordExpiresAt && new Date() > user.tempPasswordExpiresAt) {
-      throw new UnauthorizedException("Temporary password has expired");
-    }
-
-    if (verifyDto.tempPassword !== user.tempPassword) {
-      throw new UnauthorizedException("Invalid temporary password");
-    }
-
-    const hashedNewPassword = await bcrypt.hash(verifyDto.newPassword, 10);
-
-    user.password = hashedNewPassword;
-    user.isTempPassword = false;
-    user.tempPassword = null;
-    user.tempPasswordExpiresAt = null;
-
+    user.password = await bcrypt.hash(dto.newPassword, 10);
+    user.passwordResetTokenHash = null;
+    user.passwordResetExpiresAt = null;
     await user.save();
 
-    const payload = { email: user.email, sub: user.id };
-
-    return {
-      accessToken: this.jwtService.sign(payload),
-      user: {
-        id: user.id,
-        email: user.email,
-      },
-      message: "Password changed successfully",
-    };
-  }
-
-  async resetPassword(resetPasswordDto: ResetPasswordDto) {
-    const user = await this.userModel.findOne({
-      email: resetPasswordDto.email,
-    });
-
-    if (!user) {
-      return {
-        message: "If the email exists, a temporary password has been sent",
-      };
-    }
-
-    const tempPassword = this.generateTempPassword();
-    const hashedTempPassword = await bcrypt.hash(tempPassword, 10);
-
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24);
-
-    user.password = hashedTempPassword;
-    user.isTempPassword = true;
-    user.tempPassword = tempPassword;
-    user.tempPasswordExpiresAt = expiresAt;
-
-    await user.save();
-
-    await this.mailService.sendPasswordResetEmail(
-      user.email,
-      tempPassword,
-      expiresAt,
-    );
-
-    return {
-      message: "Temporary password generated",
-      email: user.email,
-      expiresAt: expiresAt,
-    };
+    return { message: "Password changed. You can now log in." };
   }
 
   async getProfile(userId: string) {
     const user = await this.userModel
       .findById(userId)
-      .select("-password -tempPassword -tempPasswordExpiresAt -isTempPassword")
+      .select("-password -passwordResetTokenHash -passwordResetExpiresAt")
       .exec();
 
     if (!user) throw new UnauthorizedException("User not found");
@@ -228,7 +202,6 @@ export class AuthService {
     }
 
     user.password = await bcrypt.hash(dto.newPassword, 10);
-    user.isTempPassword = false;
     await user.save();
 
     return { message: "Password changed successfully" };
